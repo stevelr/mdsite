@@ -1,4 +1,5 @@
 //! Markdown processing
+//!
 use crate::{Error, Result, TomlMap};
 use serde::{de::DeserializeOwned, Serialize};
 use toml::value::Value;
@@ -31,6 +32,22 @@ impl<'md> Frontmatter<'md> {
                 serde_yaml::from_str(buf).map_err(|e| Error::FrontmatterParse(e.to_string()))?
             ),
             Self::Empty => Err(Error::FrontmatterParse("no content".into())),
+        }
+    }
+
+    /// parses to TomlValue
+    pub fn to_toml(&self) -> Result<TomlMap> {
+        let val = match self {
+            Self::Toml(toml_buf) => toml::Value::from(*toml_buf),
+            Self::Yaml(yaml_buf) => serde_yaml::from_str::<toml::Value>(yaml_buf).map_err(|e| {
+                Error::FrontmatterParse(format!("yaml frontmatter: {}", e.to_string()))
+            })?,
+            Self::Empty => return Ok(TomlMap::new()),
+        };
+        if let Value::Table(t) = val {
+            Ok(t)
+        } else {
+            Err(Error::FrontmatterParse("not a dictionary".into()))
         }
     }
 }

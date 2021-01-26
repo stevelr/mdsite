@@ -36,6 +36,13 @@ pub struct Renderer<'gen> {
     vars: TomlMap,
 }
 
+impl<'gen> Default for Renderer<'gen> {
+    fn default() -> Self {
+        // unwrap ok because only error condition occurs with templates, and default has none.
+        Self::init(&RenderConfig::default()).unwrap()
+    }
+}
+
 impl<'gen> Renderer<'gen> {
     /// Initialize handlebars template processor.
     pub fn init(config: &RenderConfig) -> Result<Self> {
@@ -220,71 +227,43 @@ pub async fn generate_diff(
     Ok(diff_content)
 }
 
+#[test]
+fn initializers() {
+    let mut r1 = Renderer::default();
+    r1.set("x".into(), toml::Value::from("xyz"));
+    assert!(true);
+
+    let mut r2 = Renderer::init(&RenderConfig::default()).expect("ok");
+    r2.set("x".into(), toml::Value::from("xyz"));
+    assert!(true);
+}
+
 /// Test template processor
 #[test]
 fn test_html_page() {
-    use std::io::BufWriter;
-    const TEST_TEMPLATE: &str = include_str!("../../templates/test_template.hbs");
+    use crate::render::Renderer;
+    const TEST_TEMPLATE: &str = "<html><body><h1>{{title}}</h1>{{content}}</body></html>";
 
-    let test_template = SiteTemplate::Custom("test_template");
     let mut map = TomlMap::new();
     map.insert("title".into(), "Abc".into());
 
     // simulate processing
-    let mut expected = TEST_TEMPLATE
-        .replace("{{content}}", "1234")
+    let expected = TEST_TEMPLATE
+        .replace("{{content}}", "<p>hello</p>")
         .replace("{{title}}", "Abc");
-    // In our template there's a leading comment, strip that
-    if expected.starts_with("{{!--") {
-        const END_PAT: &str = "--}}";
-        if let Some(end_ix) = expected.find(END_PAT) {
-            expected = expected.split_off(end_ix + END_PAT.len());
-        }
-    }
 
     let mut map = TomlMap::new();
     map.insert("title".into(), "Abc".into());
-    map.insert("content".into(), "1234".into());
 
-    let mut gen = crate::html::Renderer::init(&RenderConfig {
-        templates: vec![("test_template", TEST_TEMPLATE)],
-        strict_mode: true,
-    });
-    gen.add_template("test_template", TEST_TEMPLATE)
+    let mut gen = Renderer::default();
+    gen.add_template(("test_template", TEST_TEMPLATE))
         .expect("add test template");
-    let mut buf = [0u8; 1024];
-    let mut writer = BufWriter::new(&mut buf[..]);
-    let result = generate_html_page(page_data, &gen, &mut writer);
+
+    let mut buf: Vec<u8> = Vec::new();
+    let result = write_page_html(map, "hello", "test_template", &gen, &mut buf);
     assert!(result.is_ok());
 
-    let output = String::from_utf8_lossy(&writer.buffer());
+    // had to remove newlines - there's an added \n after
+    let output = String::from_utf8_lossy(&buf).replace("\n", "");
     assert_eq!(expected, output);
-}
-
-#[test]
-fn test_slugify() {
-    assert_eq!(slugify_heading_for_anchor("a b c"), "a-b-c", "spaces");
-    assert_eq!(
-        slugify_heading_for_anchor("  a  "),
-        "a",
-        "remove leading and trailing spaces"
-    );
-    assert_eq!(
-        slugify_heading_for_anchor("-a-b-"),
-        "a-b",
-        "remove leading and trailing dash"
-    );
-    assert_eq!(
-        slugify_heading_for_anchor("\ta*/+()b"),
-        "a-b",
-        "multiple dashes coalesce into one"
-    );
-    assert_eq!(
-        slugify_heading_for_anchor("a__b"),
-        "a-b",
-        "replace underscore"
-    );
-    assert_eq!(slugify_heading_for_anchor("a.b"), "a-b", "replace period");
-    assert_eq!(slugify_heading_for_anchor("a-b"), "a-b", "dash ok");
-    assert_eq!(slugify_heading_for_anchor("α-ω"), "a-o", "no non-ascii");
 }

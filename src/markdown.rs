@@ -38,7 +38,7 @@ impl<'md> Frontmatter<'md> {
     /// parses to TomlValue
     pub fn to_toml(&self) -> Result<TomlMap> {
         let val = match self {
-            Self::Toml(toml_buf) => toml::Value::from(*toml_buf),
+            Self::Toml(toml_buf) => toml::from_str(*toml_buf)?,
             Self::Yaml(yaml_buf) => serde_yaml::from_str::<toml::Value>(yaml_buf).map_err(|e| {
                 Error::FrontmatterParse(format!("yaml frontmatter: {}", e.to_string()))
             })?,
@@ -236,7 +236,33 @@ fn test_split() {
 #[test]
 fn test_toml_parse() {
     // parse with comments, blank lines, and variables
-    let map = parse_toml("# comment \n\nboo=\"baz\"\n# comment\ncount = 99").expect("parsed");
+    let file = r#"+++
+# comment
+boo = "baz"
+
+count = 99
++++
+"#;
+    let (front, body) = crate::markdown::split_markdown(file);
+    assert_eq!(body, "");
+    let map = front.to_toml().expect("toml parse frontmatter");
+    assert_eq!(map.get("boo"), Some(Value::from("baz")).as_ref());
+    assert_eq!(map.get("count"), Some(Value::from(99)).as_ref());
+}
+
+#[test]
+fn test_yaml_parse() {
+    // parse with comments, blank lines, and variables
+    let file = r#"---
+# comment
+boo: baz
+
+count: 99
+---
+"#;
+    let (front, body) = crate::markdown::split_markdown(file);
+    assert_eq!(body, "");
+    let map = front.to_toml().expect("yaml parse frontmatter");
     assert_eq!(map.get("boo"), Some(Value::from("baz")).as_ref());
     assert_eq!(map.get("count"), Some(Value::from(99)).as_ref());
 }

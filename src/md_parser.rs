@@ -193,3 +193,31 @@ fn generate_toc_html(headings: &[Heading], max_depth: u8) -> String {
     html.push_str(&TOC_END_INDENT.repeat(indent as usize));
     html
 }
+
+#[test]
+fn test_slugify() {
+    assert_eq!(slugify_heading_for_anchor("a b c"), "a-b-c", "spaces");
+    assert_eq!(
+        slugify_heading_for_anchor("  a  "),
+        "a",
+        "remove leading and trailing spaces"
+    );
+    assert_eq!(
+        slugify_heading_for_anchor("-a-b-"),
+        "a-b",
+        "remove leading and trailing dash"
+    );
+    assert_eq!(
+        slugify_heading_for_anchor("\ta*/+()b"),
+        "a-b",
+        "multiple dashes coalesce into one"
+    );
+    assert_eq!(
+        slugify_heading_for_anchor("a__b"),
+        "a-b",
+        "replace underscore"
+    );
+    assert_eq!(slugify_heading_for_anchor("a.b"), "a-b", "replace period");
+    assert_eq!(slugify_heading_for_anchor("a-b"), "a-b", "dash ok");
+    assert_eq!(slugify_heading_for_anchor("α-ω"), "a-o", "no non-ascii");
+}

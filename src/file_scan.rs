@@ -90,7 +90,7 @@ pub fn load_frontmatter<T: DeserializeOwned>(
 }
 
 /// scan folders to build index of markdown and template files
-pub fn index_sources(sources: Vec<PathBuf>, opt: &ScanOptions) -> Result<ScanResults> {
+pub fn index_sources(sources: &[PathBuf], opt: &ScanOptions) -> Result<ScanResults> {
     let mut markdown: Vec<MarkdownPath> = Vec::new();
     let mut templates: Vec<PathBuf> = Vec::new();
 

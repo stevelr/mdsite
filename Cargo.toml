@@ -1,6 +1,6 @@
 [package]
 name = "mdsite"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["stevelr <git@somecool.net>"]
 edition = "2018"
 description = "building blocks for markdown processing and static-site gen"

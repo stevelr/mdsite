@@ -42,7 +42,7 @@ pub enum Error {
     TomlDeSer(#[from] toml::de::Error),
 
     #[error("IO Error")]
-    IO(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
 
     #[error("Github api error for url {0}: {1}")]
     Github(String, String),

@@ -4,8 +4,37 @@ use crate::{Result, TomlMap};
 use chrono::DateTime;
 use handlebars::Handlebars;
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use toml::value::Value as TomlValue;
 
+/// Html to insert before and after diff chunks
+pub struct DiffStyle {
+    /// Html to insert before a span of inserted content
+    /// `<span class="...">`
+    pub ins_start: String,
+    /// Html to insert after a span of inserted content
+    /// `</span>`
+    pub ins_end: String,
+    /// Html to insert before a span of deleted content
+    /// `<span class="...">`
+    pub del_start: String,
+    /// Html to insert after a span of deleted content
+    /// `</span>`
+    pub del_end: String,
+}
+
+impl Default for DiffStyle {
+    fn default() -> DiffStyle {
+        DiffStyle {
+            ins_start: r#"<span class="bg-green-100 text-gray-600">"#.to_string(),
+            ins_end: r#"</span>"#.to_string(),
+            del_start: r#"<span class="bg-red-100 text-gray-600 line-through">"#.to_string(),
+            del_end: r#"</span>"#.to_string(),
+        }
+    }
+}
+
+// these defaults can be overridden by the config file
 /// Pairing of template name and contents
 ///
 pub type Template<'template> = (&'template str, &'template str);
@@ -70,10 +99,22 @@ impl<'gen> Renderer<'gen> {
         self.vars = vars
     }
 
+    /// Sets all the vars from the hashap into the render dict
+    pub fn set_from<T: Into<toml::Value>>(&mut self, vars: HashMap<String, T>) {
+        for (k, v) in vars.into_iter() {
+            self.set(k, v);
+        }
+    }
+
     /// Set a value in the renderer dict. If the key was previously set, it is replaced.
     /// Values in the renderer dict override any values passed to render()
-    pub fn set(&mut self, key: String, val: TomlValue) {
-        self.vars.insert(key, val);
+    pub fn set<T: Into<TomlValue>>(&mut self, key: String, val: T) {
+        self.vars.insert(key, val.into());
+    }
+
+    /// Remove key if it was present
+    pub fn remove(&mut self, key: &str) {
+        self.vars.remove(key);
     }
 
     /// Adds template to internal dictionary
@@ -90,6 +131,24 @@ impl<'gen> Renderer<'gen> {
         // add variables that extend/override passed data
         data.extend(self.vars.clone().into_iter());
         self.hb.render_to_write(template_name, &data, writer)?;
+        Ok(())
+    }
+
+    /// Convert markdown to html and generate html page,
+    /// using 'map' data as render vars
+    pub fn write_page_html<W: std::io::Write>(
+        &self,
+        mut map: TomlMap,
+        markdown: &str,
+        template_name: &str,
+        mut writer: &mut W,
+    ) -> Result<()> {
+        let html = crate::md_parser::markdown_to_html(markdown)?;
+        map.insert("content".into(), TomlValue::from(html.content));
+        if let Some(toc) = html.toc {
+            map.insert("toc".into(), TomlValue::from(toc));
+        }
+        self.render(template_name, map, &mut writer)?;
         Ok(())
     }
 }
@@ -171,35 +230,12 @@ fn add_base_helpers(hb: &mut Handlebars) {
     );
 }
 
-/// Convert markdown to html and generate html page,
-/// using 'map' data as template input
-pub fn write_page_html<W: std::io::Write>(
-    mut map: TomlMap,
-    markdown: &str,
-    template_name: &str,
-    gen: &Renderer,
-    mut writer: &mut W,
-) -> Result<()> {
-    let html = crate::md_parser::markdown_to_html(markdown)?;
-    map.insert("content".into(), TomlValue::from(html.content));
-    if let Some(toc) = html.toc {
-        map.insert("toc".into(), TomlValue::from(toc));
-    }
-    gen.render(template_name, map, &mut writer)?;
-    Ok(())
-}
-
 /// Generate diff between two text segments.
 /// Enclose additions with <span class="add_style">...</span>
 /// and deletions with <span class="del_style">
 /// add_style, e.g., "bg-green 100 text-gray-500"
 ///
-pub async fn generate_diff(
-    first: &str,
-    second: &str,
-    del_style: (&str, &str),
-    ins_style: (&str, &str),
-) -> Result<String> {
+pub fn generate_diff(first: &str, second: &str, style: &DiffStyle) -> Result<String> {
     use dissimilar::Chunk;
 
     let chunks = dissimilar::diff(&first, &second);
@@ -213,14 +249,14 @@ pub async fn generate_diff(
                 diff_content.push_str(s);
             }
             Chunk::Delete(s) => {
-                diff_content.push_str(del_style.0);
+                diff_content.push_str(&style.del_start);
                 diff_content.push_str(s);
-                diff_content.push_str(del_style.1);
+                diff_content.push_str(&style.del_end);
             }
             Chunk::Insert(s) => {
-                diff_content.push_str(ins_style.0);
+                diff_content.push_str(&style.ins_start);
                 diff_content.push_str(s);
-                diff_content.push_str(ins_style.1);
+                diff_content.push_str(&style.ins_end);
             }
         }
     }
@@ -260,7 +296,7 @@ fn test_html_page() {
         .expect("add test template");
 
     let mut buf: Vec<u8> = Vec::new();
-    let result = write_page_html(map, "hello", "test_template", &gen, &mut buf);
+    let result = gen.write_page_html(map, "hello", "test_template", &mut buf);
     assert!(result.is_ok());
 
     // had to remove newlines - there's an added \n after
